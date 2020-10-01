@@ -14,6 +14,9 @@ import (
 	"regexp"
 	"sync"
 	"runtime"
+	"github.com/J45k4/rtf"
+	"sort"
+	"math"
 
 )
 
@@ -105,10 +108,14 @@ func getWords() string{
 
 func scanForWords(wg *sync.WaitGroup, fileArray []string, wordArray []string){
 	defer wg.Done()
-	var inFileFoundArray []string
+	// var inFileFoundArray []string
+	var allWordFoundIndexes [][]int
+	var allWordFound []string
 	for _, i := range fileArray {
-		inFileFoundArray = nil
-		counter := 0
+		// inFileFoundArray = nil
+		// counter := 0
+		allWordFound = nil
+		allWordFoundIndexes = nil
 		isValidForCheck := false
 		file, err := ioutil.ReadFile(i)
 		fileString := string(file)
@@ -151,8 +158,18 @@ func scanForWords(wg *sync.WaitGroup, fileArray []string, wordArray []string){
 				fileString = resp
 				isValidForCheck = true
 			case "rtf":
+
+				rtftxt, errRtf := ioutil.ReadFile(i)
+
+				if errRtf != nil {
+					panic(errRtf)
+				}
+
+				resp:= rtf.StripRichTextFormat(string(rtftxt))
+
+				fileString = resp
 				isValidForCheck = true
-			
+				log.Println(resp)
 		}
 
 		if kind == filetype.Unknown {
@@ -165,29 +182,83 @@ func scanForWords(wg *sync.WaitGroup, fileArray []string, wordArray []string){
 		// Matching words 
 
 			for _, element := range wordArray {
-				checkFlag, _ := regexp.MatchString("\\b"+element+"\\b", fileString)
-				if checkFlag && element != "" {
-							// log.Println("File", i , "contains:", element)
-							counter = counter + 1
-							inFileFoundArray = append(inFileFoundArray,element)
-						}
-						if counter == findLimit {
-							log.Println("In File", i , "found:", inFileFoundArray)
-							break
-						}
+				if (element != "") {
+				m := regexp.MustCompile("\\b"+element+"\\b")
+
+				wordFoundIndexes := m.FindAllStringIndex(fileString,-1)
+
+				for _, wordIndex := range wordFoundIndexes {
+					allWordFoundIndexes = append(allWordFoundIndexes,wordIndex)
+					
+
+				}
+			}
+				// checkFlag, _ := regexp.MatchString("\\b"+element+"\\b", fileString)
+				// position := m.FindStringIndex(fileString) 
+				// if checkFlag && element != "" {
+				// 			// log.Println("File", i , "contains:", element)
+				// 			counter = counter + 1
+				// 			inFileFoundArray = append(inFileFoundArray,element)
+				// 		}
+				// 		if counter == findLimit {
+				// 			log.Println("In File", i , "found:", inFileFoundArray,position)
+				// 			break
+				// 		}
 
 			}
-	 
 
-	}
+			sort.Slice(allWordFoundIndexes, func(i, j int) bool {
+				// edge cases
+				if len(allWordFoundIndexes[i]) == 0 && len(allWordFoundIndexes[j]) == 0 {
+					return false // two empty slices - so one is not less than other i.e. false
+				}
+				if len(allWordFoundIndexes[i]) == 0 || len(allWordFoundIndexes[j]) == 0 {
+					return len(allWordFoundIndexes[i]) == 0 // empty slice listed "first" (change to != 0 to put them last)
+				}
+		
+				return allWordFoundIndexes[i][0] < allWordFoundIndexes[j][0]
+			})
+
+
+			var space float64;
+			spaceCounter := 0
+			// log.Println("Found in file:",i,": ",allWordFoundIndexes)
+			for ind, wordIndex := range allWordFoundIndexes { 
+				if(len(allWordFoundIndexes) != ind + 1 ){ 
+				space =  math.Abs(float64(wordIndex[1] - allWordFoundIndexes[ind+1][0]))
+
+				// space = math.Abs(float64(space))
+				if(space <= 4){
+					allWordFound = append(allWordFound,fileString[wordIndex[0]:wordIndex[1]])
+					spaceCounter = spaceCounter + 1
+
+				}else{
+					allWordFound = nil
+					spaceCounter = 0
+				}
+
+				if (spaceCounter >= 11){
+					log.Println("File:", i)
+					log.Println("Words:", allWordFound)
+					fmt.Print("==========================================","\n")
+					break
+				}
+				// log.Println(math.Abs(float64(space)))
+
+				}
+			}
+
+
+	} //file search end
 
 	
 }
 
-var (
+var ( 
 	findLimit = 12
 	numCPU = runtime.NumCPU()
 	divided [][]string
+	
 	wg sync.WaitGroup
 )
 
